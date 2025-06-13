@@ -25,17 +25,17 @@ parser.add_argument("--alpha", type=float, default=0.5) # distillation loss weig
 args = parser.parse_args()
 
 # それぞれのモデルの読み込み
-teacher_model = fasterrcnn_mobilenet_v3_large_fpn(pretrained=False, num_classes=5)
-teacher_model.load_state_dict(torch.load("C:/Users/ohhara/mobilenetv2-ssd/distillation/teacher_model/model_epoch_200.pth"))
+teacher_model = fasterrcnn_resnet50_fpn(pretrained=False, num_classes=5)
+teacher_model.load_state_dict(torch.load("C:/Users/ohhara/mobilenetv2-ssd/distillation/teacher_model/model_epoch_190.pth"))
 teacher_model.to(args.device)
 teacher_model.eval()
 epoch_loss = 0
 t_anchor = teacher_model.rpn.anchor_generator
 anchor_gen = AnchorGenerator(t_anchor.sizes, t_anchor.aspect_ratios)
 student_model = fasterrcnn_mobilenet_v3_large_fpn(pretrained=False, num_classes=5, box_roi_pool=teacher_model.roi_heads.box_roi_pool)
-student_model.rpn.box_coder.weights = t_anchor.rpn.box_coder.weights
-student_model.roi_heads.box_coder.weights = t_anchor.roi_heads.box_coder.weights
-student_model.rpn.nms_thresh = t_anchor.rpn.nms_thresh
+student_model.rpn.box_coder.weights = teacher_model.rpn.box_coder.weights
+student_model.roi_heads.box_coder.weights = teacher_model.roi_heads.box_coder.weights
+student_model.rpn.nms_thresh = teacher_model.rpn.nms_thresh
 student_model.to(args.device)
 
 # Optimizer
