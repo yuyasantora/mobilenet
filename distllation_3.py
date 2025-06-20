@@ -12,7 +12,6 @@ from data import CustomCocoDetection
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
 import torch.nn as nn
-
 # コマンドライン引数
 parser = argparse.ArgumentParser()
 parser.add_argument("--device", type=str, default="cuda")
@@ -40,48 +39,6 @@ student_model.roi_heads.box_coder.weights = teacher_model.roi_heads.box_coder.we
 student_model.rpn.nms_thresh = teacher_model.rpn.nms_thresh
 student_model.to(args.device)
 
-
-"""ヒント学習"""
-# 1x1の畳み込み層を作成
-class ChannelAdapter(nn.Module):
-    def __init__(self, in_channels, out_channels):
-        super().__init__()
-        self.adapter = nn.Conv2d(in_channels, out_channels, kernel_size=1)
-
-    def forward(self, x):
-        return self.adapter(x)
-    
-
-        
-
-
-        
-
-
-# FPNレベルでのヒント学習
-class FPNAdapter(nn.Module):
-    def __init__(self, teacher_channels, student_channels):
-        super().__init__()
-        self.adapter = nn.ModuleList([ChannelAdapter(t_ch, s_ch) for t_ch, s_ch in zip(teacher_channels, student_channels)])
-
-    def forward(self, teacher_features, student_features):
-        loss = 0
-        for adapter, t_feat, s_feat in zip(self.adapter, teacher_features, student_features):
-            # 教師の特徴マップを生徒のチャンネル数に合わせる
-            adapted_t_feat = adapter(t_feat)
-            
-            # 教師の特徴マップを生徒の空間サイズにリサイズする
-            s_size = s_feat.shape[-2:] # (height, width)
-            resized_t_feat = F.interpolate(adapted_t_feat, size=s_size, mode='bilinear', align_corners=False)
-
-            # 特徴マップ正規化
-            t_norm = F.normalize(resized_t_feat, p=2, dim=1)
-            s_norm = F.normalize(s_feat, p=2, dim=1)
-            
-            # ヒント損失計算(1 - コサイン類似度)
-            loss += (1 - F.cosine_similarity(t_norm, s_norm, dim=1)).mean()
-        
-        return loss
 # FPNAdapterの初期化を追加（モデル読み込み後）
 # 教師と生徒のFPNチャンネル数を取得
 teacher_channels = [256, 256, 256, 256, 256]  # ResNet50 FPN
@@ -108,6 +65,39 @@ transform = T.Compose([
 dataset = CustomCocoDetection(root=root, annFile=annFile, transform=transform, target_size=target_size)
 dataloader = DataLoader(dataset, batch_size=16, shuffle=True, collate_fn=lambda x: tuple(zip(*x)), drop_last=True)
 
+
+"""ヒント学習"""
+# 1x1の畳み込み層を作成
+class ChannelAdapter(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.adapter = nn.Conv2d(in_channels, out_channels, kernel_size=1)
+
+    def forward(self, x):
+        return self.adapter(x)
+    
+# FPNレベルでのヒント学習
+class FPNAdapter(nn.Module):
+    def __init__(self, teacher_channels, student_channels):
+        super().__init__()
+        self.adapter = nn.ModuleList([ChannelAdapter(t_ch, s_ch) for t_ch, s_ch in zip(teacher_channels, student_channels)])
+
+    def forward(self, teacher_features, student_features):
+        loss = 0
+        for adapter, t_feat, s_feat in zip(self.adapter, teacher_features, student_features):
+            # 教師の特徴マップを生徒のサイズに合わせる
+            adapted_t_feat = adapter(t_feat)
+            # 特徴マップ正規化
+            t_norm = F.normalize(adapted_t_feat, p=2, dim=1)
+            s_norm = F.normalize(s_feat, dim=1)
+            # ヒント損失計算(1 - コサイン類似度)
+            loss += (1 - F.cosine_similarity(t_norm, s_norm, dim=1)).mean()
+        
+        return loss
+        
+
+
+        
 
 
     
