@@ -18,10 +18,11 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--device", type=str, default="cuda")
 parser.add_argument("--epochs", type=int, default="200")
 parser.add_argument("--batch_size", type=int, default=16)
-parser.add_argument("--lr", type=float, default=0.001)
+# ★★★ 学習率を1/10に下げる ★★★
+parser.add_argument("--lr", type=float, default=0.0001)
 parser.add_argument("--momentum", type=float, default=0.9)
 parser.add_argument("--weight_decay", type=float, default=0.0001)
-parser.add_argument("--save_dir", type=str, default="C:/Users/ohhara/mobilenetv2-ssd/distillation/student_model")
+parser.add_argument("--save_dir", type=str, default="C:/Users/ohhara/mobilenetv2-ssd/distillation/student_model_lr_1e-4") # 保存先ディレクトリを分ける
 parser.add_argument("--alpha", type=float, default=0.1) # distillation loss weight
 
 args = parser.parse_args()
@@ -131,6 +132,8 @@ for epoch in range(args.epochs):
     epoch_total_loss = 0.0
     epoch_task_loss = 0.0
     epoch_feature_loss = 0.0
+    # ★★★ 回帰損失のトラッキング用変数を追加 ★★★
+    epoch_box_reg_loss = 0.0
     
     for images, targets in tqdm.tqdm(dataloader, desc=f"Epoch {epoch+1}/{args.epochs}"):
         # 画像のリストを単一のバッチテンソルに変換
@@ -205,18 +208,27 @@ for epoch in range(args.epochs):
         epoch_total_loss += total_loss.item()
         epoch_task_loss += task_loss.item()
         epoch_feature_loss += feature_loss.item()
+        # ★★★ 回帰損失を記録 ★★★
+        # RoI HeadとRPNの両方のbox_reg損失を合計する
+        box_reg_loss = loss_dict.get('loss_box_reg', torch.tensor(0.0)) + loss_dict.get('loss_rpn_box_reg', torch.tensor(0.0))
+        epoch_box_reg_loss += box_reg_loss.item()
     
     avg_epoch_loss = epoch_total_loss / len(dataloader)
     avg_task_loss = epoch_task_loss / len(dataloader)
     avg_feature_loss = epoch_feature_loss / len(dataloader)
+    # ★★★ 平均回帰損失を計算 ★★★
+    avg_box_reg_loss = epoch_box_reg_loss / len(dataloader)
 
     writer.add_scalar("total_loss", avg_epoch_loss, epoch)
     writer.add_scalar("feature_loss", avg_feature_loss, epoch)
     writer.add_scalar("task_loss", avg_task_loss, epoch)
+    # ★★★ TensorBoardに記録 ★★★
+    writer.add_scalar("loss_box_reg", avg_box_reg_loss, epoch)
 
     print(f"epoch: {epoch + 1}")
     print(f"total_loss: {avg_epoch_loss}")
-    print(f"task_loss: {avg_task_loss:.4f}, feature_loss: {avg_feature_loss:.4f}")
+    # ★★★ コンソールにも表示 ★★★
+    print(f"task_loss: {avg_task_loss:.4f}, feature_loss: {avg_feature_loss:.4f}, box_reg_loss: {avg_box_reg_loss:.4f}")
 
 
     # 定期的にモデルを保存
